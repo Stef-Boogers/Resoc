@@ -56,6 +56,8 @@ communities-own [
   energy-stock   ;; cumulative stock of food brought in by households
   clay-stock     ;; cumulative stock of clay brought in by households
   wood-stock     ;; cumulative stock of wood brought in by households
+  agricultural-area
+  forestry-area
 ]
 
 households-own [
@@ -64,6 +66,9 @@ households-own [
   clay-carry ;; variable to allow transfer of clay from quarries to community
   wood-carry ;; variable to allow transfer of wood from forests to community
   parent     ;; variable that registers the breeder community
+  household-number
+  agricultural-area
+  forestry-area
 ]
 
 rangers-own [
@@ -255,18 +260,28 @@ to setup-ranges ;; Sets up the areas reachable from the community in rough metho
       set inRange-agriculture []
     ]
   ]
+  ask communities[
+    set agricultural-area count patches with [member? self inRange-agriculture]
+    set forestry-area count patches with [member? self inRange-forestry]
+  ]
 end
 
 to setup-households ;; creates a total population through number defined by slider
   ask communities [
     let claim self
-    hatch-households population [
+    let pop population
+    let agri-area agricultural-area
+    let for-area forestry-area
+    hatch-households 1 [
       set members round random-normal household-size 0.5
       set shape "person"
       set size 5
       set food-carry 0
       set wood-carry 0
       set parent claim
+      set household-number pop ; only one household printed, but it represents all households in community. Saves memory.
+      set agricultural-area agri-area
+      set forestry-area for-area
      ]
   ]
 end
@@ -307,32 +322,32 @@ to exploit-resources
   ifelse ticks mod 2 = 0 [        ;; alternate between food exploitation and clay/wood
   ;; every two ticks (i.e. once per year) households move to farms to exploit all available resources and move back to settlement
   ask households [
-    ;print "I am going to get food"
-    ;pen-down
+    let runs min (list household-number agricultural-area)
     let homebase patch-here
-    ;move-to one-of patches with [member? [parent] of myself inRange-agriculture]
-    move-to max-one-of patches with [member? [parent] of myself inRange-agriculture][food-fertility]
-    let food-exploited 0
-    ask patch-here [
-      set food-exploited food-fertility
-    ; print food-exploit
-      set food-fertility 0    ;; basic assumption of exploiting all available food
-    ]
+    foreach (range 1 runs 1)[
+      move-to max-one-of patches with [member? [parent] of myself inRange-agriculture][food-fertility]
+      let food-exploited 0
+      ask patch-here [
+          set food-exploited food-fertility
+          set food-fertility 0
+      ]
     set food-carry food-exploited
     move-to homebase
     ask communities-here [
         set energy-stock energy-stock + [food-carry] of myself
       ]
-      pen-up
+    set food-carry 0
+      ]
     ]
   ]
   [
     ask households [
-   ;   pen-down
    ;   print "I want WOOOOODDD"
       let homebase patch-here
+      let runs min (list household-number forestry-area)
       ifelse random 2 > 0 [
-         move-to one-of patches in-radius territory with [clay? = true]  ;; TBI: search for highest quality clays in function of distance from site
+        foreach (range 1 runs 1)[
+        move-to one-of patches in-radius territory with [clay? = true]  ;; TBI: search for highest quality clays in function of distance from site
          let clay-exploited 0
          ask patch-here [
            set clay-exploited (clay-quantity * clay-exploitation-rate)  ;; TBI: for now random 10% of source exploited, what would be realistic?
@@ -343,26 +358,31 @@ to exploit-resources
          ask communities-here [
           set clay-stock clay-stock + [clay-carry] of myself
           ]
+         set clay-carry 0
+        ]
         ]
         [
         ;move-to one-of patches in-radius territory with [(wood-standingStock > 0) and (member? [parent] of myself inRange-forestry)]
         pen-down
-        move-to max-one-of patches with [member? [parent] of myself inRange-forestry][wood-standingStock]
-        let wood-exploited 0
-        ask patch-here [
-          set wood-exploited wood-standingStock
-          set wood-standingStock 0  ;; all wood from exploited patch is collected
-          set wood-age 0 ;; reset forest growth
+        foreach (range 1 runs 1)[
+          move-to max-one-of patches with [member? [parent] of myself inRange-forestry][wood-standingStock]
+          let wood-exploited 0
+          ask patch-here [
+            set wood-exploited wood-standingStock
+            set wood-standingStock 0  ;; all wood from exploited patch is collected
+            set wood-age 0 ;; reset forest growth
           ]
           set wood-carry wood-exploited
           move-to homebase
           ask communities-here [
             set wood-stock wood-stock + [wood-carry] of myself
            ]
-        pen-up
+          set wood-carry 0
           ]
+        pen-up
         ]
        ]
+  ]
 
   ;; TBI: walking costs can be further implemented
   ;; TBI: opportunity costs! part of population exploits food, other part wood and clay
